@@ -51,6 +51,9 @@ class Operation(ABC):
     parameter_docs: ClassVar[dict[str, str]] = {}
     # Parameters that must be lists; comma-separated strings are split automatically.
     list_parameters: ClassVar[tuple[str, ...]] = ()
+    # Analysis operations (group by, pivot) summarize the data to be looked at, plotted or
+    # saved as a *new* dataset. They are not offered as steps that rewrite the table.
+    analysis_only: ClassVar[bool] = False
 
     def normalize(self, df: pd.DataFrame, params: Params) -> Params:
         """Return a canonical copy of ``params`` (coerced types, lists, ...).

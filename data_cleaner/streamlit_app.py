@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st  # noqa: E402
 
+from data_cleaner.ui.analysis_view import render_analyze  # noqa: E402
 from data_cleaner.ui.sidebar import render_sidebar  # noqa: E402
 from data_cleaner.ui.state import get_workspace, show_flash  # noqa: E402
 from data_cleaner.ui.views import (  # noqa: E402
@@ -41,6 +42,7 @@ SECTIONS = {
     ":material/table: Data": lambda: render_data(dataset),
     ":material/lightbulb: Recommendations": lambda: render_recommendations(dataset),
     ":material/cleaning_services: Clean": lambda: render_clean(dataset),
+    ":material/analytics: Analyze": lambda: render_analyze(workspace, dataset),
     ":material/merge: Combine": lambda: render_combine(workspace),
     ":material/inventory_2: Quarantine": lambda: render_quarantine(dataset),
     ":material/bar_chart: Plot": lambda: render_plot(dataset),

@@ -278,18 +278,22 @@ def render_quarantine(dataset: Dataset) -> None:
 
 
 def render_plot(dataset: Dataset) -> None:
-    df = dataset.current
-    kind = st.selectbox("Plot type", list(PLOT_KINDS), format_func=_title, key="plot_kind")
+    render_plotter(dataset.current, dataset.name, key_prefix="plot")
+
+
+def render_plotter(df: pd.DataFrame, source_name: str, key_prefix: str) -> None:
+    """Plot controls and chart for any table. ``key_prefix`` keeps widget keys unique per use."""
+    kind = st.selectbox("Plot type", list(PLOT_KINDS), format_func=_title, key=f"{key_prefix}_kind")
     specs = PLOT_KINDS[kind]
     arguments: dict = {}
-    _render_plot_arguments([s for s in specs if s.group == DATA], df, kind, arguments)
+    _render_plot_arguments([s for s in specs if s.group == DATA], df, kind, arguments, key_prefix)
     style_specs = [s for s in specs if s.group == STYLE]
     if style_specs:
         with st.expander("Style options"):
-            _render_plot_arguments(style_specs, df, kind, arguments)
-    title = st.text_input("Title (optional)", key="plot_title")
+            _render_plot_arguments(style_specs, df, kind, arguments, key_prefix)
+    title = st.text_input("Title (optional)", key=f"{key_prefix}_title")
     max_points = st.number_input(
-        "Max rows to plot (larger tables are sampled; 0 = all)", min_value=0, value=DEFAULT_MAX_POINTS, step=10_000, key="plot_max_points"
+        "Max rows to plot (larger tables are sampled; 0 = all)", min_value=0, value=DEFAULT_MAX_POINTS, step=10_000, key=f"{key_prefix}_max_points"
     )
 
     try:
@@ -297,25 +301,25 @@ def render_plot(dataset: Dataset) -> None:
     except (ValueError, KeyError, TypeError) as error:
         st.info(f"{error}  (* = required)")
         return
-    st.plotly_chart(figure, key=f"plot_chart|{kind}", alt=f"{_title(kind)} plot of {dataset.name}")
+    st.plotly_chart(figure, key=f"{key_prefix}_chart|{kind}", alt=f"{_title(kind)} plot of {source_name}")
     code = plot_code(kind, arguments, title or None, max_points or None)
     with st.expander("Code", expanded=True):
         st.code(code, language="python")
-    st.download_button("Download chart (HTML)", figure.to_html(), file_name=f"{kind}.html", mime="text/html", icon=":material/download:")
+    st.download_button("Download chart (HTML)", figure.to_html(), file_name=f"{kind}.html", mime="text/html", icon=":material/download:", key=f"{key_prefix}_download")
 
 
-def _render_plot_arguments(specs: list[PlotArgument], df: pd.DataFrame, kind: str, arguments: dict) -> None:
+def _render_plot_arguments(specs: list[PlotArgument], df: pd.DataFrame, kind: str, arguments: dict, key_prefix: str) -> None:
     """Draw one widget per argument, matched to its type, and collect values into ``arguments``."""
     grid = st.columns(3)
     for position, spec in enumerate(specs):
         with grid[position % 3]:
-            arguments.update(_render_plot_argument(spec, df, kind))
+            arguments.update(_render_plot_argument(spec, df, kind, key_prefix))
 
 
-def _render_plot_argument(spec: PlotArgument, df: pd.DataFrame, kind: str) -> dict:
+def _render_plot_argument(spec: PlotArgument, df: pd.DataFrame, kind: str, key_prefix: str) -> dict:
     """Widget(s) for one argument. Returns {argument name: value} entries to pass on."""
     label = spec.name + (" *" if spec.required else "")
-    key = f"plot|{kind}|{spec.name}"
+    key = f"{key_prefix}|{kind}|{spec.name}"
     help_text = spec.help or None
     blank = lambda option: "-" if option is None else option  # noqa: E731 - tiny display helper
 

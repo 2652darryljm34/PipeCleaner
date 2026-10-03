@@ -20,7 +20,8 @@ python -m data_cleaner.cli data.csv -c "drop_duplicates" -c "export clean.csv"  
 | Original copy preserved | Data > Original, `original` |
 | Quarantine: removed rows + changed cells, with step and reason; restore rows | Quarantine, `quarantine`, `restore` |
 | Recommended cleaning steps, one click to apply | Recommendations, `recommend` / `apply_rec` |
-| Filter, rename, drop duplicates/nulls, convert dtypes, bins, fill/replace, group by, pivot, stack, melt, add/remove columns | Clean, or the operation name in the REPL (`ops`) |
+| Filter, rename, drop duplicates/nulls, convert dtypes, bins, fill/replace, stack, melt, add/remove columns | Clean, or the operation name in the REPL (`ops`) |
+| Analysis that never edits the data: column overview, counts, distinct values, sum/mean/median/std/var/quartiles, value counts, group by, pivot, correlation (download, plot, or save as a new dataset) | Analyze, `summary` / `counts` / `group_by` / `pivot` / `corr` |
 | Edit cells, delete/add rows in the grid | Data (editable table) |
 | Merge / concat datasets | Combine, `merge` / `concat` |
 | Any Plotly Express plot type | Plot, `plot` |

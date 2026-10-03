@@ -19,7 +19,6 @@ from data_cleaner.core.operations.cleaning import (
     FILTER_OPERATORS,
     NULL_OPERATORS,
 )
-from data_cleaner.core.operations.reshape import AGGREGATION_FUNCTIONS
 
 FormRenderer = Callable[[pd.DataFrame, str], "dict | None"]
 MAX_FILTER_CONDITIONS = 8
@@ -195,25 +194,6 @@ def form_sort_values(df: pd.DataFrame, key: str) -> dict | None:
     return {"by": by, "ascending": ascending} if by else None
 
 
-def form_group_by(df: pd.DataFrame, key: str) -> dict | None:
-    by = _pick_columns("Group by", df, f"{key}_by")
-    remaining = [c for c in df.columns if c not in by]
-    numeric_default = [c for c in _numeric_columns(df) if c in remaining][:1]
-    values = st.multiselect("Aggregate columns", remaining, default=numeric_default, key=f"{key}_values")
-    functions = st.multiselect("Functions", AGGREGATION_FUNCTIONS, default=["sum"], key=f"{key}_funcs")
-    if not (by and values and functions):
-        return None
-    return {"by": by, "aggregations": {column: functions for column in values}}
-
-
-def form_pivot(df: pd.DataFrame, key: str) -> dict | None:
-    index = _pick_columns("Rows (index)", df, f"{key}_index")
-    columns = _pick_columns("Columns (become headers)", df, f"{key}_columns")
-    values = _pick_columns("Values", df, f"{key}_values")
-    aggfunc = st.selectbox("Aggregate with", AGGREGATION_FUNCTIONS, key=f"{key}_agg")
-    return {"index": index, "columns": columns, "values": values, "aggfunc": aggfunc} if (index and columns and values) else None
-
-
 def form_stack(df: pd.DataFrame, key: str) -> dict | None:
     id_columns = _pick_columns("Identifier columns (kept as-is)", df, f"{key}_ids", help="Every other column is stacked into rows.")
     var_name = st.text_input("Name for old column names", value="variable", key=f"{key}_var")
@@ -232,7 +212,8 @@ def form_melt(df: pd.DataFrame, key: str) -> dict | None:
 
 
 # Operations offered in the Clean section. Manual edits (set_cells, drop_rows, add_rows,
-# restore_rows) come from the editable table and the quarantine view instead.
+# restore_rows) come from the editable table and the quarantine view instead; group by and
+# pivot are analysis (see ui/analysis_view.py) because they would replace the table.
 FORMS: dict[str, FormRenderer] = {
     "rename_columns": form_rename_columns,
     "drop_duplicates": form_drop_duplicates,
@@ -246,8 +227,6 @@ FORMS: dict[str, FormRenderer] = {
     "add_column": form_add_column,
     "drop_columns": form_drop_columns,
     "sort_values": form_sort_values,
-    "group_by": form_group_by,
-    "pivot": form_pivot,
     "stack": form_stack,
     "melt": form_melt,
 }

@@ -6,6 +6,7 @@ import textwrap
 
 import pandas as pd
 
+from .analysis import AnalysisResult
 from .dataset import Dataset
 from .loaders import LoadedData
 from .operations import OperationError
@@ -98,6 +99,19 @@ class Workspace:
         arguments = ", ".join(f"{key}={value!r}" for key, value in keys.items())
         origin_code = f"{functions}\ndf = pd.concat([{calls}], {arguments})"
         return self._add(Dataset(self._unique_name(new_name), combined, origin_code))
+
+    def save_analysis(self, source_name: str, new_name: str, result: AnalysisResult) -> Dataset:
+        """Keep an analysis result (e.g. a group-by summary) as its own dataset.
+
+        The source dataset is not changed. The new dataset starts from the result table, and
+        its exported script rebuilds it from the source as it is right now.
+        """
+        source = self._get(source_name)
+        origin_code = (
+            f"{_loader_function('load_source', source)}\n"
+            f"df = load_source()\n{result.code}\ndf = summary"
+        )
+        return self._add(Dataset(self._unique_name(new_name), result.table, origin_code))
 
     # ------------------------------------------------------------------- internals
 

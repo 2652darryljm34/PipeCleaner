@@ -23,9 +23,11 @@ from typing import Any
 
 import pandas as pd
 
+from .core import analysis
 from .core.dataset import Dataset
 from .core.loaders import SUPPORTED_EXTENSIONS, load_data
 from .core.operations import OPERATIONS, OperationError, parse_cli_value
+from .core.operations.base import as_list
 from .core.plotting import PLOT_KINDS, build_figure, plot_code, resolve_fixed_arguments
 from .core.recommendations import apply_all_recommendations, recommend
 from .core.workspace import Workspace
@@ -171,7 +173,9 @@ class CleanerShell(cmd.Cmd):
     def do_ops(self, arg: str) -> None:
         """ops: list every cleaning operation. Use 'help <operation>' for its parameters."""
         for name, operation in OPERATIONS.items():
-            print(f"  {name:<16} {operation.summary}")
+            if not operation.analysis_only:
+                print(f"  {name:<16} {operation.summary}")
+        print("Analysis (never modifies the data): summary, counts, group_by, pivot, corr")
 
     def do_help(self, arg: str) -> None:
         """help [command|operation]: show help."""
@@ -222,6 +226,68 @@ class CleanerShell(cmd.Cmd):
         """load_steps <file.json>: replace the history with steps from a saved file."""
         self.dataset.load_steps_json(Path(arg.strip()).read_text(encoding="utf-8"))
         print(f"Loaded {len(self.dataset.steps)} step(s).")
+
+    # -------------------------------------------------------------------- analysis
+    # These only read the data. Add save_as=<name> to keep a result as a new dataset.
+
+    def _show_analysis(self, result: analysis.AnalysisResult, options: dict[str, Any]) -> None:
+        save_as = options.pop("save_as", None)
+        if options:
+            raise OperationError(f"Unknown option(s): {sorted(options)}")
+        print(format_table(result.table, 60))
+        print(f"[{len(result.table)} rows]\n--- code ---\n{result.code}\n------------")
+        if save_as:
+            dataset = self.workspace.save_analysis(self.dataset.name, str(save_as), result)
+            print(f"Saved as new dataset '{dataset.name}' (now active). The source dataset is unchanged.")
+
+    def do_summary(self, arg: str) -> None:
+        """summary: column overview (types, nulls, distinct values) and numeric statistics
+        (count, sum, mean, median, std, var, min, quartiles, max)."""
+        current = self.dataset.current
+        print(format_table(analysis.column_overview(current).table, 60))
+        if analysis.numeric_columns(current):
+            print()
+            print(format_table(analysis.numeric_statistics(current).table, 60))
+
+    def do_counts(self, arg: str) -> None:
+        """counts <column> [limit=25] [nulls=true]: distinct values with counts and percent."""
+        column, *rest = split_arguments(arg)
+        options = parse_key_values(rest)
+        result = analysis.value_counts(
+            self.dataset.current, column, bool(options.get("nulls", False)), int(options.get("limit", 25)) or None
+        )
+        print(format_table(result.table, 60))
+        print(f"[{self.dataset.current[column].nunique()} distinct values]")
+
+    def do_group_by(self, arg: str) -> None:
+        """group_by by=a,b aggregations='{"sales":["sum","mean"]}' [rows=true] [save_as=name]:
+        summarize per group. Shows the result; does not change the dataset."""
+        options = parse_key_values(split_arguments(arg))
+        result = analysis.grouped_summary(
+            self.dataset.current,
+            as_list(options.pop("by", None)) or [],
+            options.pop("aggregations", None) or {},
+            bool(options.pop("rows", True)),
+        )
+        self._show_analysis(result, options)
+
+    def do_pivot(self, arg: str) -> None:
+        """pivot index=a columns=b values=c [aggfunc=sum] [save_as=name]: cross-tabulate.
+        Shows the result; does not change the dataset."""
+        options = parse_key_values(split_arguments(arg))
+        result = analysis.pivot_summary(
+            self.dataset.current,
+            as_list(options.pop("index", None)) or [],
+            as_list(options.pop("columns", None)) or [],
+            as_list(options.pop("values", None)) or [],
+            options.pop("aggfunc", "sum"),
+        )
+        self._show_analysis(result, options)
+
+    def do_corr(self, arg: str) -> None:
+        """corr [method=pearson|spearman|kendall]: correlation matrix of numeric columns."""
+        options = parse_key_values(split_arguments(arg))
+        print(format_table(analysis.correlations(self.dataset.current, options.get("method", "pearson")).table, 60))
 
     # ------------------------------------------------------------------ quarantine
 

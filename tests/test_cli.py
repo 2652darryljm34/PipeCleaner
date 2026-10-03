@@ -66,3 +66,20 @@ def test_plot_accepts_fixed_color_and_size(shell, tmp_path, capsys):
     shell.onecmd(f"plot scatter x=age y=age color=red size=14 out={out}")
     output = capsys.readouterr().out
     assert out.exists() and "marker_color='red'" in output and "marker_size=14" in output
+
+
+def test_analysis_commands_do_not_change_the_data(shell, capsys):
+    before = shell.dataset.current.copy()
+    for command in ["summary", "counts city", "corr", "group_by by=city aggregations='{\"age\": [\"sum\", \"mean\"]}'", "pivot index=Name columns=city values=age"]:
+        shell.onecmd(command)
+    output = capsys.readouterr().out
+    assert "Error" not in output and "distinct values" in output and "age_sum" in output and "row_count" in output
+    assert shell.dataset.steps == []
+    pd.testing.assert_frame_equal(shell.dataset.current, before)
+
+
+def test_group_by_save_as_creates_a_new_dataset(shell, capsys):
+    shell.onecmd("group_by by=city rows=true save_as=by_city")
+    assert "by_city" in shell.workspace.datasets and shell.workspace.active_name == "by_city"
+    assert shell.workspace.datasets["messy"].steps == []
+    assert shell.workspace.datasets["by_city"].current["row_count"].sum() == 6

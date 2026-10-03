@@ -1,7 +1,9 @@
 """Operations that change the shape of the table: group by, pivot, stack, melt.
 
 These replace the table with a new structure, so they quarantine nothing; the
-original dataset and the step history remain available.
+original dataset and the step history remain available. Group by and pivot are
+``analysis_only``: the Analyze section runs them to produce summaries without editing
+the dataset; stack and melt remain cleaning steps.
 """
 
 from __future__ import annotations
@@ -29,32 +31,55 @@ def _flatten_column_name(column: object) -> str:
 
 class GroupBy(Operation):
     name = "group_by"
-    summary = "Group rows and aggregate columns (one output column per column/function)."
+    summary = "Group rows and aggregate columns, with an optional row count per group."
+    analysis_only = True
     parameter_docs = {
         "by": "columns to group by",
         "aggregations": f"dict of {{column: [functions]}}; functions: {', '.join(AGGREGATION_FUNCTIONS)}",
+        "include_row_count": "add a row_count column with the number of rows in each group",
     }
     list_parameters = ("by",)
 
     def apply(
-        self, df: pd.DataFrame, by: list[str], aggregations: dict[str, list[str]]
+        self,
+        df: pd.DataFrame,
+        by: list[str],
+        aggregations: dict[str, list[str]] | None = None,
+        include_row_count: bool = False,
     ) -> OperationResult:
-        require_columns(df, by + list(aggregations))
-        named = self._named_aggregations(aggregations)
-        return OperationResult(df.groupby(by, as_index=False).agg(**named))
+        require_columns(df, by + list(aggregations or {}))
+        named = self._named_aggregations(aggregations or {}, include_row_count)
+        grouped = df.groupby(by)
+        if not named:
+            return OperationResult(grouped.size().rename("row_count").reset_index())
+        result = grouped.agg(**named).reset_index()
+        if include_row_count:
+            result.insert(len(by), "row_count", grouped.size().to_numpy())
+        return OperationResult(result)
 
-    def to_code(self, by: list[str], aggregations: dict[str, list[str]]) -> str:
-        named = self._named_aggregations(aggregations)
-        return (
-            f"df = df.groupby({code_literal(by)}, as_index=False).agg(\n"
-            f"    **{code_literal(named)}\n)"
-        )
+    def to_code(
+        self,
+        by: list[str],
+        aggregations: dict[str, list[str]] | None = None,
+        include_row_count: bool = False,
+    ) -> str:
+        named = self._named_aggregations(aggregations or {}, include_row_count)
+        lines = [f"grouped = df.groupby({code_literal(by)})"]
+        if not named:
+            lines.append("df = grouped.size().rename('row_count').reset_index()")
+            return "\n".join(lines)
+        lines.append(f"df = grouped.agg(\n    **{code_literal(named)}\n).reset_index()")
+        if include_row_count:
+            lines.append(f"df.insert({len(by)}, 'row_count', grouped.size().to_numpy())")
+        return "\n".join(lines)
 
     @staticmethod
-    def _named_aggregations(aggregations: dict[str, list[str]]) -> dict[str, tuple[str, str]]:
+    def _named_aggregations(
+        aggregations: dict[str, list[str]], include_row_count: bool
+    ) -> dict[str, tuple[str, str]]:
         """{"sales": ["sum"]} -> {"sales_sum": ("sales", "sum")} (pandas named aggregation)."""
-        if not aggregations:
-            raise OperationError("Choose at least one column and function to aggregate.")
+        if not aggregations and not include_row_count:
+            raise OperationError("Choose columns and functions to aggregate, or include the row count.")
         named = {}
         for column, functions in aggregations.items():
             for function in functions:
@@ -67,6 +92,7 @@ class GroupBy(Operation):
 class Pivot(Operation):
     name = "pivot"
     summary = "Pivot: unique values of one column become new columns."
+    analysis_only = True
     parameter_docs = {
         "index": "columns that stay as rows",
         "columns": "column(s) whose values become new column headers",
