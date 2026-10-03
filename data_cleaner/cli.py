@@ -27,7 +27,7 @@ from .core.dataset import Dataset
 from .core.loaders import SUPPORTED_EXTENSIONS, load_data
 from .core.operations import OPERATIONS, OperationError, parse_cli_value
 from .core.plotting import PLOT_KINDS, build_figure, plot_code, resolve_fixed_arguments
-from .core.recommendations import recommend
+from .core.recommendations import apply_all_recommendations, recommend
 from .core.workspace import Workspace
 
 PREVIEW_ROWS = 10
@@ -252,7 +252,16 @@ class CleanerShell(cmd.Cmd):
             print("No recommendations - the data looks clean.")
 
     def do_apply_rec(self, arg: str) -> None:
-        """apply_rec <n>: apply recommendation number n from the last 'recommend'."""
+        """apply_rec <n|all>: apply recommendation n from the last 'recommend', or all of them."""
+        if arg.strip().lower() == "all":
+            outcome = apply_all_recommendations(self.dataset)
+            for title in outcome.applied:
+                print(f"  applied: {title}")
+            for note in outcome.skipped:
+                print(f"  skipped: {note}")
+            print(f"Applied {len(outcome.applied)} suggestion(s); {len(self.dataset.steps)} step(s) total.")
+            self.recommendations = []
+            return
         number = int(arg)
         if not 1 <= number <= len(self.recommendations):
             raise OperationError("Run 'recommend' first, then pick one of the listed numbers.")

@@ -197,3 +197,47 @@ def test_numeric_and_style_arguments_reach_the_figure_and_the_code():
 def test_false_toggles_are_left_out_of_the_code():
     code = plot_code("scatter", {"x": "x", "y": "y", "log_x": False, "opacity": 0.5})
     assert "log_x" not in code and "opacity=0.5" in code
+
+
+# ------------------------------------------------------------ category / apply all
+
+from pathlib import Path  # noqa: E402
+
+from data_cleaner.core.recommendations import apply_all_recommendations  # noqa: E402
+
+
+def sample_sales() -> pd.DataFrame:
+    return pd.read_csv(Path(__file__).parent.parent / "examples" / "messy_sales.csv")
+
+
+def test_category_suggestion_goes_away_after_applying_it():
+    dataset = Dataset("s", sample_sales())
+    suggested = [r for r in recommend(dataset.current) if r.params.get("dtype") == "category"]
+    assert suggested
+    for item in suggested:
+        dataset.apply(item.operation, **item.params)
+    assert not [r for r in recommend(dataset.current) if r.params.get("dtype") == "category"]
+
+
+def test_apply_all_applies_each_suggestion_once_and_terminates():
+    dataset = Dataset("s", sample_sales())
+    outcome = apply_all_recommendations(dataset)
+    assert outcome.applied and not outcome.skipped
+    assert len(dataset.steps) == len(outcome.applied)
+    assert len(set(outcome.applied)) == len(outcome.applied)  # nothing applied twice
+    remaining = [r.title for r in recommend(dataset.current)]
+    assert not any(title.startswith(("Convert", "Drop", "Trim", "Rename", "Fill")) for title in remaining), remaining
+
+
+def test_apply_all_reports_failures_and_continues(monkeypatch):
+    dataset = Dataset("s", sample_sales())
+    original_apply = dataset.apply
+
+    def flaky_apply(name, **params):
+        if name == "drop_duplicates":
+            raise ValueError("boom")
+        return original_apply(name, **params)
+
+    monkeypatch.setattr(dataset, "apply", flaky_apply)
+    outcome = apply_all_recommendations(dataset)
+    assert any("boom" in note for note in outcome.skipped) and outcome.applied

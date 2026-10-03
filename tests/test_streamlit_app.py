@@ -175,3 +175,13 @@ def test_fixed_color_and_size_from_the_ui_reach_the_chart_code(app):
     app.run()
     assert app.text_input(key="plot|scatter|color_fixed").disabled
     assert "marker_color" not in "\n".join(block.value for block in app.code)
+
+
+def test_apply_all_button_applies_every_suggestion(app):
+    app = open_section(app, "Recommendations")
+    dataset = app.session_state["workspace"].active
+    apply_all = next(button for button in app.button if button.label.startswith("Apply all"))
+    apply_all.click()
+    app.run()
+    assert not app.exception and len(dataset.steps) > 1
+    assert any("Applied" in message.value for message in app.success)

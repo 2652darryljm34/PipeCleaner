@@ -21,7 +21,7 @@ from data_cleaner.core.plotting import (
     fixed_key,
     plot_code,
 )
-from data_cleaner.core.recommendations import Recommendation, recommend
+from data_cleaner.core.recommendations import Recommendation, apply_all_recommendations, recommend
 from data_cleaner.core.workspace import Workspace
 
 from .forms import FORMS
@@ -106,9 +106,24 @@ def render_recommendations(dataset: Dataset) -> None:
     if not recommendations:
         st.success("No cleaning steps recommended - the data looks tidy.", icon=":material/task_alt:")
         return
-    st.caption(f"{len(recommendations)} suggestion(s), most important first. Applying one adds a step you can undo.")
+    text_column, button_column = st.columns([4, 1], vertical_alignment="center")
+    text_column.caption(
+        f"{len(recommendations)} suggestion(s), most important first. Each applied suggestion is a separate step you can undo."
+    )
+    if button_column.button(f"Apply all ({len(recommendations)})", type="primary", icon=":material/done_all:", width="stretch"):
+        _apply_all(dataset)
     for position, item in enumerate(recommendations):
         _render_recommendation(dataset, item, position)
+
+
+def _apply_all(dataset: Dataset) -> None:
+    """Apply every suggestion (re-profiling after each) and summarize what happened."""
+    with st.spinner("Applying suggestions..."):
+        outcome = apply_all_recommendations(dataset)
+    message = f"Applied {len(outcome.applied)} suggestion(s)."
+    if outcome.skipped:
+        message += f" Skipped {len(outcome.skipped)}: " + "; ".join(outcome.skipped)
+    run_action(lambda: None, message)
 
 
 def _cached_recommendations(dataset: Dataset) -> list[Recommendation]:

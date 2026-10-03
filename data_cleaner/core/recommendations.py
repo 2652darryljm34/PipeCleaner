@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import re
 import warnings
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import pandas as pd
 
 from .operations import OPERATIONS
+
+if TYPE_CHECKING:
+    from .dataset import Dataset
 
 SAMPLE_SIZE = 500  # values inspected when guessing numeric/datetime text columns
 MIN_PARSE_SHARE = 0.9  # share of values that must parse to suggest a type conversion
@@ -34,6 +38,17 @@ class Recommendation:
 
     def code(self) -> str:
         return OPERATIONS[self.operation].to_code(**self.params)
+
+    @property
+    def repeat_key(self) -> str:
+        """Identity used to apply each suggestion at most once in ``apply_all_recommendations``.
+
+        Outlier filters embed thresholds computed from the data, which shift after every
+        pass, so they are identified by operation and column only.
+        """
+        if self.operation == "filter_rows":
+            return f"{self.operation}:{self.columns}"
+        return f"{self.operation}:{self.columns}:{json.dumps(self.params, sort_keys=True, default=str)}"
 
 
 def recommend(df: pd.DataFrame) -> list[Recommendation]:
@@ -143,10 +158,13 @@ def _constant_columns(df: pd.DataFrame) -> list[Recommendation]:
 
 
 def _text_columns(df: pd.DataFrame) -> list[str]:
+    """Columns holding text. Categoricals are excluded: pandas calls them string-like, but
+    they are already converted, and suggesting category -> category again never ends."""
     return [
         column
         for column in df.columns
-        if pd.api.types.is_string_dtype(df[column]) or pd.api.types.is_object_dtype(df[column])
+        if not isinstance(df[column].dtype, pd.CategoricalDtype)
+        and (pd.api.types.is_string_dtype(df[column]) or pd.api.types.is_object_dtype(df[column]))
     ]
 
 
@@ -294,3 +312,37 @@ def _numeric_outliers(df: pd.DataFrame) -> list[Recommendation]:
             )
         )
     return recommendations
+
+
+# --------------------------------------------------------------------- apply all
+
+
+@dataclass
+class ApplyAllResult:
+    """What ``apply_all_recommendations`` did."""
+
+    applied: list[str] = field(default_factory=list)  # titles of applied suggestions
+    skipped: list[str] = field(default_factory=list)  # "title: reason" for suggestions that failed
+
+
+def apply_all_recommendations(dataset: Dataset, max_steps: int = 100) -> ApplyAllResult:
+    """Apply suggestions one at a time, re-profiling the table after each step.
+
+    Re-profiling matters because every step changes the table (renamed or dropped columns,
+    new dtypes), which would make a precomputed list stale. Each suggestion is applied at
+    most once, so the loop always ends; ones that fail are skipped and reported.
+    """
+    result, handled = ApplyAllResult(), set()
+    for _ in range(max_steps):
+        pending = [item for item in recommend(dataset.current) if item.repeat_key not in handled]
+        if not pending:
+            break
+        item = pending[0]
+        handled.add(item.repeat_key)
+        try:
+            dataset.apply(item.operation, **item.params)
+        except Exception as error:  # one bad suggestion should not stop the rest
+            result.skipped.append(f"{item.title}: {error}")
+        else:
+            result.applied.append(item.title)
+    return result
